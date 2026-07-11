@@ -678,11 +678,11 @@ export default function App() {
         {/* Alvos secundários (distratores) */}
         {extraTargets.map((et) => {
           const ediff = diffMils(et.az, viewAz);
-          const evis = mode === "eye" || (Math.abs(ediff) <= FOV_BINO / 2 - 6 && (() => { const y = lensYOf(et.az); return y > VIEW * 0.10 && y < VIEW * 0.92; })());
+          const evis = mode === "eye" || (Math.abs(ediff) <= FOV_BINO / 2 - 6 && (() => { const y = lensYOf(et.dist); return y > VIEW * 0.10 && y < VIEW * 0.92; })());
           if (!evis) return null;
           const esc = clamp(1200 / et.dist, 0.8, 2.5) * sizeMul * targetZoom;
           return (
-            <g key={et.id} transform={"translate(" + toX(et.az) + "," + toY(et.dist) + ") scale(" + esc + ")"} opacity="0.55">
+            <g key={et.id} transform={"translate(" + toX(et.az) + "," + toY(et.dist) + ") scale(" + esc + ")"} opacity="0.72">
               {et.type === "tanque" && (<g>
                 <rect x="-16" y="-3" width="32" height="5" rx="2.5" fill="#14170f" />
                 <path d="M -15,-3 L -12,-8 L 13,-8 L 16,-3 Z" fill="#252b1a" />
@@ -1168,6 +1168,9 @@ export default function App() {
               <clipPath id="groundAreaEye">
                 <rect x="0" y={eyeYOff + EYE_H * 0.33} width={VIEW} height={EYE_H} />
               </clipPath>
+              <clipPath id="eyeStripClip">
+                <rect x="0" y={eyeYOff} width={VIEW} height={EYE_H} />
+              </clipPath>
               <radialGradient id="vignette" cx="50%" cy="50%" r="50%">
                 <stop offset="55%" stopColor="#000" stopOpacity="0" />
                 <stop offset="88%" stopColor="#000" stopOpacity="0" />
@@ -1308,16 +1311,20 @@ export default function App() {
                 <rect width={VIEW} height={VIEW} fill="#101008" />
                 <image href={S.img} x="0" y={eyeYOff} width={VIEW} height={EYE_H} preserveAspectRatio="xMidYMid slice" />
                 {fog > 0 && <rect x="0" y={eyeYOff} width={VIEW} height={EYE_H} fill="url(#fogGradEye)" style={{ pointerEvents: "none" }} />}
-                {rain > 0 && Array.from({ length: rain === 1 ? 30 : 60 }, (_, i) => {
-                  const x = ((i * 53 + 17) % VIEW);
-                  const dur = (0.45 + (i % 6) * 0.06).toFixed(2);
-                  const del = (-(i * 0.11) % Number(dur)).toFixed(2);
-                  const len = rain === 1 ? 9 + (i % 4) * 2 : 12 + (i % 5) * 3;
-                  const op = rain === 1 ? 0.45 : 0.65;
-                  return <line key={i} x1={x} y1={eyeYOff} x2={x} y2={eyeYOff + len}
-                    stroke={`rgba(160,195,220,${op})`} strokeWidth={rain === 1 ? 0.9 : 1.2}
-                    className="rain-drop" style={{ animationDuration: dur + "s", animationDelay: del + "s" }} />;
-                })}
+                {rain > 0 && (
+                  <g clipPath="url(#eyeStripClip)">
+                    {Array.from({ length: rain === 1 ? 30 : 60 }, (_, i) => {
+                      const x = ((i * 53 + 17) % VIEW);
+                      const dur = (0.45 + (i % 6) * 0.06).toFixed(2);
+                      const del = (-(i * 0.11) % Number(dur)).toFixed(2);
+                      const len = rain === 1 ? 9 + (i % 4) * 2 : 12 + (i % 5) * 3;
+                      const op = rain === 1 ? 0.45 : 0.65;
+                      return <line key={i} x1={x} y1={eyeYOff} x2={x} y2={eyeYOff + len}
+                        stroke={`rgba(160,195,220,${op})`} strokeWidth={rain === 1 ? 0.9 : 1.2}
+                        className="rain-drop" style={{ animationDuration: dur + "s", animationDelay: del + "s" }} />;
+                    })}
+                  </g>
+                )}
                 <g clipPath="url(#groundAreaEye)">{renderOverlays(toEyeX, toEyeY, 0.5)}</g>
                 {briefing && refPoints.map((p) => {
                   const gx = toEyeX(p.az);
