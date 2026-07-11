@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Eye, Binoculars, ZoomIn, Target, RefreshCw, Timer, Settings, Radio, Flame, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, MapPin, MapPinOff, ListOrdered, Crosshair, Clock } from "lucide-react";
+import { Eye, Binoculars, ZoomIn, Target, RefreshCw, Timer, Settings, Radio, Flame, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, MapPin, MapPinOff, ListOrdered, Crosshair, Clock, Trophy } from "lucide-react";
 
 // Mapa de campo aberto extraído pixel a pixel das fotos (1 = alvo permitido)
 const OPEN_GRIDS = [
@@ -248,6 +248,9 @@ export default function App() {
   const colSpeedRef = useRef(3);                        // mils por segundo
   const [fog, setFog] = useState(0);   // 0=nenhuma 1=leve 2=moderada 3=densa
   const [rain, setRain] = useState(0); // 0=sem chuva 1=leve 2=forte
+  const [userName, setUserName] = useState(() => localStorage.getItem('po_user') || "");
+  const [lastScore, setLastScore] = useState(null);
+  const missionStartRef = useRef(0);
 
   const S = SCENES[scene];
   const FOV_BINO = ZOOM_LEVELS[zoomIdx];
@@ -390,6 +393,8 @@ export default function App() {
     setBriefing(true);
     setPhase("briefing");
     setTimeLeft(timerSet);
+    missionStartRef.current = Date.now();
+    setLastScore(null);
     setLog([
       { t: ">> " + SCENES[sc].name + ".", id: Math.random() },
       { t: ">> CTir: OA, RECONHEÇA O TERRENO. PONTOS NOTÁVEIS FORNECIDOS.", id: Math.random() + 1 },
@@ -483,6 +488,32 @@ export default function App() {
     azBias: wind * 4.5,                       // vento lateral (mils, positivo = direita)
     distBias: (temp - 25) * 4 - (humid - 60) * 0.9, // calor alonga, umidade encurta
   });
+
+  function computeScore(adjRounds, elapsed, wasDestroyed) {
+    const BASE = wasDestroyed ? 1000 : 400;
+    const effBonus = Math.max(0, (6 - adjRounds) * 80);
+    const speedBonus = timerEnabled ? Math.max(0, Math.round((1 - elapsed / timerSet) * 500)) : 0;
+    const wMul = (1 + fog * 0.20) * (1 + rain * 0.15) * (1 + (wind / 10) * 0.30);
+    const total = Math.round((BASE + effBonus + speedBonus) * wMul);
+    return { total, BASE, effBonus, speedBonus, wMul: Math.round(wMul * 100) / 100, adjRounds };
+  }
+
+  function saveToRanking(sc, sceneIdx) {
+    const entry = {
+      user: userName.trim() || "OA Anônimo",
+      score: sc.total,
+      date: new Date().toLocaleDateString('pt-BR'),
+      sceneName: SCENES[sceneIdx].name,
+      fog, rain, wind,
+      destroyed: sc.BASE === 1000,
+      breakdown: sc,
+    };
+    const existing = JSON.parse(localStorage.getItem('po_rankings') || '[]');
+    existing.push(entry);
+    existing.sort((a, b) => b.score - a.score);
+    localStorage.setItem('po_rankings', JSON.stringify(existing.slice(0, 50)));
+    return entry;
+  }
 
   function fireRound(aimAz, aimDist, dirSpread, rangeSpread, corr) {
     const wb = weatherBias();
@@ -594,6 +625,10 @@ export default function App() {
       if (wasDestroyed) {
         setDestroyed(true);
         stopTimer();
+        const elapsed = (Date.now() - missionStartRef.current) / 1000;
+        const sc = computeScore(adjRounds, elapsed, true);
+        setLastScore(sc);
+        saveToRanking(sc, scene);
         pushLog([
           ">> OA: ALVO DESTRUÍDO. MISSÃO CUMPRIDA. (" + adjRounds + " de ajustagem + " + total + " em eficácia, " + hits + " no alvo)",
         ]);
@@ -1106,6 +1141,16 @@ export default function App() {
               </div>
             </div>
             <div>
+              <div className="font-mono text-[10px] mb-1" style={{ color: "#8fbf6f" }}>IDENTIFICAÇÃO DO OA</div>
+              <input
+                value={userName}
+                onChange={(e) => { setUserName(e.target.value); localStorage.setItem('po_user', e.target.value); }}
+                placeholder="Posto / Nome (ex: Sgt Silva)"
+                className="w-full h-8 px-2 font-mono text-[10px]"
+                style={{ background: "#2c281e", color: "#D8CFA8", border: "1px solid #5C6B3F", outline: "none" }}
+              />
+            </div>
+            <div>
               <div className="font-mono text-[10px] mb-1" style={{ color: "#8fbf6f" }}>MISSÃO</div>
               <button onClick={() => { newMission(); setTab("campo"); }} className="h-8 px-4 font-mono text-[10px] uppercase" style={{ background: "#7a3020", color: "#D8CFA8", borderRadius: "2px" }}>
                 <span className="flex items-center gap-1.5"><RefreshCw size={11}/>reiniciar missão</span>
@@ -1457,7 +1502,7 @@ export default function App() {
                   Enviar Correção
                 </button>
                 {postFfe && (
-                  <button onClick={() => { stopTimer(); pushLog([">> OA: ALVO NEUTRALIZADO. MISSÃO CUMPRIDA."]); setPhase("complete"); }} className="w-full py-1 font-mono text-[10px] uppercase" style={{ background: "#4a4433", color: "#D8CFA8" }}>
+                  <button onClick={() => { stopTimer(); const sc = computeScore(rounds.length, (Date.now() - missionStartRef.current) / 1000, false); setLastScore(sc); saveToRanking(sc, scene); pushLog([">> OA: ALVO NEUTRALIZADO. MISSÃO CUMPRIDA."]); setPhase("complete"); }} className="w-full py-1 font-mono text-[10px] uppercase" style={{ background: "#4a4433", color: "#D8CFA8" }}>
                     encerrar — alvo neutralizado
                   </button>
                 )}
@@ -1486,26 +1531,70 @@ export default function App() {
               </div>
             )}
             {phase === "complete" && (
-              <div className="flex gap-2 items-center">
-                <div className="flex-1 font-mono text-xs" style={{ color: "#D8CFA8" }}>
+              <div className="flex flex-col gap-1.5">
+                <div className="font-mono text-xs" style={{ color: "#D8CFA8" }}>
                   MISSÃO CUMPRIDA — <span style={{ color: "#C97A2B" }}>{rating}</span>
+                  {lastScore && <span style={{ color: "#FFD700", marginLeft: 8 }}>★ {lastScore.total} pts</span>}
                 </div>
-                <button onClick={() => newMission()} className="flex-1 py-1.5 font-mono text-xs font-bold uppercase tracking-wide" style={{ background: "#C97A2B", color: "#232019" }}>
-                  Novo Alvo
-                </button>
+                {lastScore && (
+                  <div className="font-mono text-[9px]" style={{ color: "#8fbf6f" }}>
+                    base {lastScore.BASE} · efic +{lastScore.effBonus} · vel +{lastScore.speedBonus} · clima ×{lastScore.wMul}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <button onClick={() => newMission()} className="flex-1 py-1.5 font-mono text-xs font-bold uppercase tracking-wide" style={{ background: "#C97A2B", color: "#232019" }}>
+                    Novo Alvo
+                  </button>
+                  <button onClick={() => setTab("rank")} className="py-1.5 px-3 font-mono text-xs font-bold uppercase" style={{ background: "#2c281e", color: "#FFD700", border: "1px solid #5c4a20" }}>
+                    <span className="flex items-center gap-1"><Trophy size={12}/>Rank</span>
+                  </button>
+                </div>
               </div>
             )}
           </div>
 
         </div>
-        <div className="grid grid-cols-4 gap-1">
+        {tab === "rank" && (() => {
+          const rankings = JSON.parse(localStorage.getItem('po_rankings') || '[]');
+          return (
+            <div className="rounded-sm p-3 border-2 flex flex-col gap-2 overflow-y-auto" style={{ background: "#15130d", borderColor: "#C97A2B", maxHeight: "72vh" }}>
+              <div className="font-mono text-xs font-bold uppercase flex items-center gap-2" style={{ color: "#C97A2B" }}>
+                <Trophy size={13}/>Ranking de OAs
+              </div>
+              {lastScore && (
+                <div className="font-mono text-[10px] p-2" style={{ background: "#1e1c12", border: "1px solid #5c4a20", color: "#D8CFA8" }}>
+                  <div className="font-bold mb-0.5" style={{ color: "#FFD700" }}>ÚLTIMA MISSÃO — {lastScore.total} pts</div>
+                  <div>Base {lastScore.BASE} · Eficiência +{lastScore.effBonus} · Velocidade +{lastScore.speedBonus}</div>
+                  <div>Multiplicador clima ×{lastScore.wMul} · {lastScore.adjRounds} rodadas de ajust.</div>
+                </div>
+              )}
+              {rankings.length === 0
+                ? <div className="font-mono text-[10px] py-2" style={{ color: "#5C6B3F" }}>Nenhuma missão registrada ainda. Complete uma missão para aparecer aqui.</div>
+                : rankings.slice(0, 15).map((r, i) => (
+                  <div key={i} className="flex items-center gap-2 font-mono text-[10px] py-1.5 px-2" style={{ background: "#1a1810", borderBottom: "1px solid #2c2a1e", color: "#D8CFA8" }}>
+                    <span style={{ color: i === 0 ? "#FFD700" : i === 1 ? "#C0C0C0" : i === 2 ? "#CD7F32" : "#5C6B3F", fontWeight: "bold", minWidth: 18 }}>{i+1}°</span>
+                    <span className="flex-1 truncate">{r.user}</span>
+                    <span style={{ color: "#C97A2B", fontWeight: "bold" }}>{r.score}</span>
+                    <span style={{ color: "#8fbf6f", fontSize: "8px" }}>{r.fog > 0 || r.rain > 0 || r.wind > 0 ? `neb${r.fog} ch${r.rain} vt${r.wind}` : "sem clima"}</span>
+                    <span style={{ color: "#5C6B3F", fontSize: "8px" }}>{r.date}</span>
+                  </div>
+                ))
+              }
+              <button onClick={() => { localStorage.removeItem('po_rankings'); }} className="mt-1 py-1 px-2 font-mono text-[9px] uppercase self-start" style={{ background: "#2c281e", color: "#5C6B3F", border: "1px solid #3a3527" }}>
+                limpar histórico
+              </button>
+            </div>
+          );
+        })()}
+        <div className="grid grid-cols-5 gap-1">
           {[
-            { id: "campo", icon: <Crosshair size={14} />, label: "Campo" },
-            { id: "tiros", icon: <Flame size={14} />, label: "Tiros" },
-            { id: "radio", icon: <Radio size={14} />, label: "Rádio" },
-            { id: "config", icon: <Settings size={14} />, label: "Config" },
+            { id: "campo", icon: <Crosshair size={13} />, label: "Campo" },
+            { id: "tiros", icon: <Flame size={13} />, label: "Tiros" },
+            { id: "radio", icon: <Radio size={13} />, label: "Rádio" },
+            { id: "config", icon: <Settings size={13} />, label: "Config" },
+            { id: "rank",  icon: <Trophy size={13} />,   label: "Rank"  },
           ].map((t) => (
-            <button key={t.id} onClick={() => setTab(t.id)} className="py-2 font-mono text-[10px] uppercase font-bold truncate" style={{ background: tab === t.id ? "#5C6B3F" : "#232019", color: "#D8CFA8", borderTop: tab === t.id ? "2px solid #C97A2B" : "2px solid transparent" }}>
+            <button key={t.id} onClick={() => setTab(t.id)} className="py-2 font-mono text-[10px] uppercase font-bold truncate" style={{ background: tab === t.id ? "#5C6B3F" : "#232019", color: t.id === "rank" ? (tab === "rank" ? "#FFD700" : "#C97A2B") : "#D8CFA8", borderTop: tab === t.id ? "2px solid #C97A2B" : "2px solid transparent" }}>
               <span className="flex items-center justify-center gap-1">{t.icon}{t.label}</span>
             </button>
           ))}
