@@ -302,16 +302,20 @@ export default function App() {
     setViewEl(clampV(el));
   }
 
+  // distância mínima por cena: FASE 1 tem grama no primeiro plano até ~1300m
+  const SCENE_MIN_DIST = [1300, 900, 900, 900];
+
   function spawnTarget(sc) {
     const depth = SCENES[sc].depth;
+    const minDist = SCENE_MIN_DIST[sc] ?? 900;
     for (let tries = 0; tries < 200; tries++) {
       const az = rnd(-620, 620);
-      const dist = rnd(900, 2800);
+      const dist = rnd(minDist, 2800);
       const xf = 0.5 + az / MILS_PHOTO;
       const yf = distToFrac(depth, dist);
       if (isOpenAt(sc, xf, yf)) return { az, dist };
     }
-    return { az: 0, dist: 1600 };
+    return { az: 0, dist: Math.max(minDist, 1600) };
   }
 
   function repositionTarget() {
@@ -357,7 +361,7 @@ export default function App() {
     for (let i = 0; i < 2; i++) {
       for (let tries = 0; tries < 150; tries++) {
         const az = mainAz + rnd(-400, 400);
-        const dist = clamp(mainDist + rnd(-400, 400), 700, 3000);
+        const dist = clamp(mainDist + rnd(-400, 400), SCENE_MIN_DIST[sc] ?? 700, 3000);
         const xf = 0.5 + az / MILS_PHOTO;
         const yf = distToFrac(SCENES[sc].depth, dist);
         if (!isOpenAt(sc, xf, yf)) continue;
